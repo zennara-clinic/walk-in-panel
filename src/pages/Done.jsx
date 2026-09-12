@@ -11,11 +11,13 @@ import { guestCodeOf } from "../lib/guestCode.js";
  * medical history by tapping Back. Their guest code is the one thing they need
  * to carry to the front desk.
  */
-export default function Done({ submitted, guest, onFinish }) {
+export default function Done({ submitted, guest, onFinish, banner = null }) {
   const first = String(submitted.name || guest?.fullName || "").split(" ")[0];
   return (
     <Page center>
       <div className="zp-card zp-done" style={{ maxWidth: 520, margin: "0 auto", width: "100%" }}>
+        {/* The tablet closes this screen on its own if it is left sitting here. */}
+        {banner}
         <div className="zp-done__mark"><CheckCircle size={34} /></div>
         <p className="zp-eyebrow">All done</p>
         <h1 className="zp-h1">Thank you{first ? `, ${first}` : ""}.</h1>

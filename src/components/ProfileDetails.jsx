@@ -1,8 +1,12 @@
-import { useEffect, useState } from "react";
-import { GENDER_OPTIONS, todayISO, walkInProfileSchema } from "../../shared/preconsult-schema.js";
+import { useEffect, useRef, useState } from "react";
+import { GENDER_OPTIONS, walkInProfileSchema } from "../../shared/preconsult-schema.js";
 import { api } from "../lib/api.js";
-import { Alert, Chips, Field } from "./ui.jsx";
+import { focusFirstError } from "../lib/focusError.js";
+import { Alert, Chips, DateOfBirthInput, Field } from "./ui.jsx";
 import { ArrowRight } from "./icons.jsx";
+
+/** The order errors are walked in when jumping the guest to the first one. */
+const FIELD_ORDER = ["fullName", "dateOfBirth", "gender", "email", "location"];
 
 /**
  * The details that open a Zennara patient record: name, date of birth, gender,
@@ -12,19 +16,28 @@ import { ArrowRight } from "./icons.jsx";
  * proves the number. Everything here is either required by the `User` model or
  * needed to route the guest to the right centre, so the form is deliberately
  * short; the clinical questions come next.
+ *
+ * `onExpired(values, message)` fires when the 20-minute proof from the OTP has
+ * run out (or the session has). A guest who types slowly used to hit
+ * PHONE_VERIFICATION_REQUIRED here with no back button, no way to ask for a new
+ * code, and only a "Start over" link that threw away everything they had typed.
+ * Handing the values back up means the phone step can re-verify and drop them
+ * straight back here with the form as they left it.
  */
-export default function ProfileDetails({ phone, walkinToken, existing, onSaved }) {
+export default function ProfileDetails({ phone, walkinToken, existing, draftValues, onSaved, onExpired }) {
   const [values, setValues] = useState(() => ({
     fullName: existing?.fullName || "",
     dateOfBirth: existing?.dateOfBirth ? String(existing.dateOfBirth).slice(0, 10) : "",
     gender: existing?.gender || "",
     email: existing?.email || "",
     location: existing?.location || "",
+    ...(draftValues || {}),
   }));
   const [branches, setBranches] = useState(null);
   const [errors, setErrors] = useState({});
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const checkedLocation = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -33,6 +46,23 @@ export default function ProfileDetails({ phone, walkinToken, existing, onSaved }
       .catch(() => { if (alive) setBranches([]); });
     return () => { alive = false; };
   }, []);
+
+  /*
+   * Drop a centre name the branch list no longer knows.
+   *
+   * `location` is seeded from the existing record, which for a long-standing or
+   * Zenoti-mirrored guest can hold a branch that has since been renamed or is
+   * spelled differently. No chip lit up, but the value was non-empty so the
+   * client-side "please choose the centre" check passed, the save went out, and
+   * the server answered "That centre is not available" with nothing selected
+   * and nothing highlighted. Clearing it lets the ordinary required-field error
+   * fire locally, against the field it belongs to.
+   */
+  useEffect(() => {
+    if (!branches || checkedLocation.current) return;
+    checkedLocation.current = true;
+    setValues((s) => (s.location && !branches.some((b) => b.name === s.location) ? { ...s, location: "" } : s));
+  }, [branches]);
 
   const set = (k, v) => {
     setValues((s) => ({ ...s, [k]: v }));
@@ -47,7 +77,9 @@ export default function ProfileDetails({ phone, walkinToken, existing, onSaved }
         const k = String(issue.path[0]);
         if (!errs[k]) errs[k] = issue.message;
       }
-      return setErrors(errs);
+      setErrors(errs);
+      requestAnimationFrame(() => focusFirstError(errs, FIELD_ORDER));
+      return;
     }
     setBusy(true);
     setError(null);
@@ -55,8 +87,12 @@ export default function ProfileDetails({ phone, walkinToken, existing, onSaved }
       const data = await api.saveProfile(parsed.data, walkinToken);
       onSaved?.(data.user);
     } catch (e) {
-      setError(e.message);
       setBusy(false);
+      // The proof or the session has run out — not something to fix on this screen.
+      if (e.code === "PHONE_VERIFICATION_REQUIRED" || e.status === 401) {
+        return onExpired?.(values, e.message);
+      }
+      setError(e.message);
     }
   }
 
@@ -70,31 +106,24 @@ export default function ProfileDetails({ phone, walkinToken, existing, onSaved }
           : "This opens your Zennara guest record. Fields marked * are required."}
       </p>
 
-      <div className="zp-grid">
-        <Field label="Full name" required htmlFor="zp-fullName" error={errors.fullName}>
-          <input
-            id="zp-fullName"
-            className={`zp-input${errors.fullName ? " zp-input--invalid" : ""}`}
-            autoComplete="name"
-            placeholder="As on your ID"
-            value={values.fullName}
-            onChange={(e) => set("fullName", e.target.value)}
-          />
-        </Field>
-        <Field label="Date of birth" required htmlFor="zp-dateOfBirth" error={errors.dateOfBirth}>
-          <input
-            id="zp-dateOfBirth"
-            className={`zp-input${errors.dateOfBirth ? " zp-input--invalid" : ""}`}
-            type="date"
-            max={todayISO()}
-            value={values.dateOfBirth}
-            onChange={(e) => set("dateOfBirth", e.target.value)}
-          />
-        </Field>
-      </div>
+      <Field label="Full name" required htmlFor="zp-fullName" error={errors.fullName}>
+        <input
+          id="zp-fullName"
+          className={`zp-input${errors.fullName ? " zp-input--invalid" : ""}`}
+          autoComplete="name"
+          maxLength={100}
+          aria-invalid={errors.fullName ? true : undefined}
+          placeholder="As on your ID"
+          value={values.fullName}
+          onChange={(e) => set("fullName", e.target.value)}
+        />
+      </Field>
+      <Field label="Date of birth" required htmlFor="zp-dateOfBirth" error={errors.dateOfBirth}>
+        <DateOfBirthInput id="zp-dateOfBirth" value={values.dateOfBirth} onChange={(v) => set("dateOfBirth", v)} invalid={Boolean(errors.dateOfBirth)} />
+      </Field>
 
       <Field label="Gender" required error={errors.gender}>
-        <Chips options={GENDER_OPTIONS} multi={false} value={values.gender} onChange={(v) => set("gender", v)} name="Gender" />
+        <Chips id="zp-gender" error={errors.gender} options={GENDER_OPTIONS} multi={false} value={values.gender} onChange={(v) => set("gender", v)} name="Gender" />
       </Field>
 
       <div className="zp-grid">
@@ -107,6 +136,7 @@ export default function ProfileDetails({ phone, walkinToken, existing, onSaved }
             className={`zp-input${errors.email ? " zp-input--invalid" : ""}`}
             type="email"
             autoComplete="email"
+            aria-invalid={errors.email ? true : undefined}
             placeholder="you@example.com"
             value={values.email}
             onChange={(e) => set("email", e.target.value)}
@@ -121,6 +151,8 @@ export default function ProfileDetails({ phone, walkinToken, existing, onSaved }
           <Alert tone="error">Could not load the centre list. Please ask the front desk.</Alert>
         ) : (
           <Chips
+            id="zp-location"
+            error={errors.location}
             options={branches.map((b) => b.name)}
             multi={false}
             value={values.location}

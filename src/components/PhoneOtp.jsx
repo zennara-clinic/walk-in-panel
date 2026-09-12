@@ -11,10 +11,15 @@ import { MessageCircle } from "./icons.jsx";
  * Country code is fixed to +91: Zennara's centres are in Hyderabad and the
  * backend only accepts 10-digit Indian mobiles, so a code field would be a box
  * that can only be filled in wrongly.
+ *
+ * `initialPhone` is the number we already know, so a guest sent back here by an
+ * expired 20-minute proof only has to ask for a new code — not retype the
+ * number, and not lose the details they had already filled in. `notice`
+ * explains, in plain words, why they are looking at this screen again.
  */
-export default function PhoneOtp({ onVerified }) {
+export default function PhoneOtp({ onVerified, initialPhone = "", notice = null }) {
   const [step, setStep] = useState("phone");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(() => String(initialPhone || "").replace(/\D/g, "").slice(0, 10));
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -59,6 +64,7 @@ export default function PhoneOtp({ onVerified }) {
   if (step === "phone") {
     return (
       <form onSubmit={(e) => { e.preventDefault(); sendOtp(); }}>
+        {notice && <Alert tone="pending">{notice}</Alert>}
         <Field
           label="WhatsApp mobile number"
           htmlFor="zp-phone"

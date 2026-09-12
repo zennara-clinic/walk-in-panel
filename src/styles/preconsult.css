@@ -18,7 +18,13 @@
   --zp-border: #e8e3da;
   --zp-text: #111714;
   --zp-text-2: #4f5853;
-  --zp-text-3: #7a827e;
+  /*
+   * Was #7a827e, which is 3.9:1 on --zp-bg — under the 4.5:1 minimum, and this
+   * token carries the field hints, every piece of muted text and the "Sign here"
+   * prompt. #676f6b is 5.0:1 on the page and better still on white cards, and
+   * still reads as clearly secondary next to --zp-text.
+   */
+  --zp-text-3: #676f6b;
   /* status */
   --zp-ok: #267a50;        --zp-ok-bg: #e5f4eb;
   --zp-pending: #9a5b13;   --zp-pending-bg: #fff3dd;
@@ -89,7 +95,12 @@
 .zp-input, .zp-select, .zp-textarea {
   width: 100%; min-height: 44px;
   border: 1px solid var(--zp-border); background: var(--zp-surface); border-radius: var(--zp-r-btn);
-  padding: 10px 14px; font-size: 14px; outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+  /*
+   * 16px, not 14px: iOS Safari zooms the whole page in whenever a focused input
+   * is under 16px, so tapping any field on an iPad threw the layout sideways and
+   * left the guest pinching back out. It is also simply easier to read.
+   */
+  padding: 10px 14px; font-size: 16px; outline: none; transition: border-color 0.15s, box-shadow 0.15s;
 }
 .zp-input:focus, .zp-select:focus, .zp-textarea:focus { border-color: var(--zp-secondary); box-shadow: 0 0 0 3px rgba(11, 74, 55, 0.15); }
 .zp-input[readonly] { background: var(--zp-ivory); color: var(--zp-text-2); }
@@ -119,6 +130,14 @@
 .zp-chip--on { background: var(--zp-gold); border-color: var(--zp-gold); color: var(--zp-primary); font-weight: 700; }
 .zp-chip--on:hover { background: var(--zp-gold-dark); border-color: var(--zp-gold-dark); }
 .zp-chip:focus-visible { outline: 2px solid var(--zp-secondary); outline-offset: 2px; }
+/* The group itself is focusable only so an error can jump the guest to it. */
+.zp-chips:focus { outline: none; }
+.zp-chips:focus-visible { outline: 2px solid var(--zp-secondary); outline-offset: 4px; border-radius: 12px; }
+.zp-chips--invalid .zp-chip { border-color: var(--zp-error); }
+
+/* Date of birth: day / month / year, never a native date picker. */
+.zp-dob { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr) minmax(0, 1fr); gap: 8px; }
+@media (max-width: 400px) { .zp-dob { grid-template-columns: 1fr; } }
 
 /* Yes / No question row */
 .zp-yesno { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--zp-border); }
@@ -156,7 +175,18 @@
 .zp-btn--danger:not(:disabled):hover { background: var(--zp-error-bg); }
 .zp-btn--block { width: 100%; }
 .zp-btn:focus-visible { outline: 2px solid var(--zp-secondary); outline-offset: 2px; }
-.zp-link { background: none; border: 0; padding: 0; color: var(--zp-secondary); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; min-height: 0; }
+/*
+ * "Start over", "Change number", "Resend code" were ~17px tall on a tablet
+ * everything else gives a 44px target to — and "Start over" destroys the whole
+ * check-in. Inline-flex with a real minimum height makes them the same size as
+ * every other control without changing how they read in a sentence.
+ */
+.zp-link {
+  background: none; border: 0; color: var(--zp-secondary); font-weight: 600; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: 0 6px; margin: 0 -6px; vertical-align: middle;
+}
 .zp-link:disabled { color: var(--zp-text-3); text-decoration: none; cursor: default; }
 .zp-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--zp-border); }
 .zp-btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
