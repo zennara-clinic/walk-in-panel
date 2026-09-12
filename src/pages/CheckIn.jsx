@@ -33,6 +33,18 @@ const ACTIVITY = ["pointerdown", "keydown", "touchstart", "input", "wheel", "scr
 /** All four are present on the profile the API returns; any missing one means the record is half-built. */
 const profileComplete = (user) => Boolean(user?.fullName && user?.location && user?.dateOfBirth && user?.gender);
 
+/** Today on the clinic's wall clock, which is the only day the desk means. */
+const clinicToday = () =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+/** How long the "we found your record" screen sits before it moves on by itself. */
+const RECOGNISED_MS = 3000;
+
 /**
  * The whole walk-in check-in, as one state machine on one route.
  *
@@ -59,6 +71,15 @@ export default function CheckIn() {
   const [profileDraft, setProfileDraft] = useState(null);
   const [notice, setNotice] = useState(null);
   const [idleWarning, setIdleWarning] = useState(false);
+  /*
+   * This guest already submitted an intake today.
+   *
+   * A second form for one visit is not a correction, it is two clinical
+   * records for the same appointment, and the dermatologist has no way to tell
+   * which one the guest meant. So say it plainly and let the desk decide —
+   * never silently collect another.
+   */
+  const alreadyCheckedInToday = Boolean(guest?.lastCheckInDay) && guest.lastCheckInDay === clinicToday();
   /*
    * The prefill now arrives from /walkin/me a beat after verify-otp, so hold
    * the form back until it has landed: PreConsultForm reads `initial` once, in
@@ -199,12 +220,51 @@ export default function CheckIn() {
       setLatest(result.user?.latest || null);
       setPrefillReady(false);
       api.me()
-        .then(({ user }) => setLatest(user?.latest || result.user?.latest || null))
+        .then(({ user }) => {
+          setLatest(user?.latest || result.user?.latest || null);
+          // /me carries the fuller record — the day they last checked in, and
+          // any profile fields the verify payload did not have.
+          if (user) setGuest((current) => ({ ...(current || {}), ...user }));
+        })
         .catch(() => { /* the form simply opens blank — nothing is lost */ })
         .finally(() => setPrefillReady(true));
+      /*
+       * A guest we already know does not get asked to confirm details they
+       * have given us before. Say so, then take them to the form — that is the
+       * only thing still outstanding for this visit.
+       *
+       * This is also the earliest point at which it is safe to say "we know
+       * this number". Saying it on the number screen, before the code is
+       * verified, would let anyone on the internet ask whether a phone belongs
+       * to a Zennara patient, one number at a time.
+       */
+      setPhase("recognised");
+      return;
     }
     setPhase("details");
   }
+
+  /** Where a recognised guest goes once they have read the message. */
+  const continueFromRecognised = useCallback(() => {
+    const user = guestRef.current;
+    setPhase(profileComplete(user) ? "form" : "details");
+    window.scrollTo({ top: 0 });
+  }, []);
+
+  /*
+   * The recognition screen moves on by itself, so nobody is left waiting for a
+   * button they did not realise was theirs to press. The button is there too:
+   * three seconds is a long time when you already know what it says.
+   */
+  useEffect(() => {
+    if (phase !== "recognised") return undefined;
+    // Wait for /walkin/me before moving: it is what says whether this guest has
+    // already checked in today, and advancing first would hand them a second
+    // form for the same visit — the one thing this screen exists to prevent.
+    if (!prefillReady || alreadyCheckedInToday) return undefined;
+    const t = setTimeout(continueFromRecognised, RECOGNISED_MS);
+    return () => clearTimeout(t);
+  }, [phase, prefillReady, alreadyCheckedInToday, continueFromRecognised]);
 
   /**
    * The 20-minute proof (or the session) ran out while the guest was typing.
@@ -285,6 +345,60 @@ export default function CheckIn() {
             This finds your Zennara record, or starts a new one.
           </p>
           <PhoneOtp onVerified={onVerified} initialPhone={phone} notice={notice} />
+        </div>
+      </Page>
+    );
+  }
+
+  if (phase === "recognised") {
+    const firstName = guest?.fullName ? guest.fullName.split(" ")[0] : "";
+    return (
+      <Page center right={right}>
+        <div className="zp-card" style={{ maxWidth: 520, margin: "0 auto", width: "100%" }}>
+          {idleBanner}
+          <p className="zp-eyebrow">Welcome back</p>
+          <h2 className="zp-h2">
+            {firstName ? `We found your record, ${firstName}` : "We found your Zennara record"}
+          </h2>
+
+          {alreadyCheckedInToday ? (
+            <>
+              <Alert tone="info">
+                You have already filled the pre-consult form today, so there is nothing else to do.
+                Please hand the tablet back and take a seat.
+              </Alert>
+              <p className="zp-small zp-muted">
+                If the front desk has asked you to fill it in again, you can start a new form.
+              </p>
+              <div className="zp-actions">
+                <button type="button" className="zp-btn zp-btn--primary" onClick={reset}>
+                  Hand back to reception
+                </button>
+                <button
+                  type="button"
+                  className="zp-btn zp-btn--ghost"
+                  onClick={() => { setPhase(profileComplete(guest) ? "form" : "details"); window.scrollTo({ top: 0 }); }}
+                >
+                  Fill a new form
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="zp-lead" style={{ marginTop: 0 }}>
+                Your details are already with us. To complete your visit, please fill in the
+                pre-consult form — your doctor needs it before your consultation.
+              </p>
+              <p className="zp-small zp-muted" aria-live="polite">
+                Taking you to the form…
+              </p>
+              <div className="zp-actions">
+                <button type="button" className="zp-btn zp-btn--primary" onClick={continueFromRecognised}>
+                  Continue now
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </Page>
     );
