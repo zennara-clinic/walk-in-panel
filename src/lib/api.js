@@ -6,11 +6,32 @@
  * moment — same patient id, same Zenoti guest, same pre-consult record the
  * dermatologist panel reads.
  *
- * Set VITE_API_BASE_URL to the API origin (e.g. https://api.zennara.in). Left
- * unset, requests go to the same origin and Vite's dev proxy forwards them to
- * the local backend.
+ * Set VITE_API_BASE_URL to the API origin to point the tablet somewhere else
+ * (a staging API, a colleague's machine). It is not needed for a normal
+ * deployment.
  */
-const ORIGIN = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
+const PRODUCTION_API_ORIGIN = "https://api.zennara.in";
+
+/**
+ * Where this build talks to.
+ *
+ * Deployed with nothing configured, this used to resolve to an empty origin,
+ * so the tablet posted /api/walkin/send-otp to whatever host was serving the
+ * page — its own Vercel domain, which has no API — and every check-in died on
+ * a 404 at the very first step. The empty origin is only ever right on a dev
+ * machine, where Vite's proxy forwards /api to the local backend; anywhere
+ * else the answer is the production API. Same rule the mobile app uses, so the
+ * two cannot be configured into disagreeing.
+ */
+function apiOrigin() {
+  const configured = (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
+  if (configured) return configured;
+  const host = typeof window === "undefined" ? "" : window.location.hostname;
+  const isDevServer = host === "localhost" || host === "127.0.0.1";
+  return isDevServer ? "" : PRODUCTION_API_ORIGIN;
+}
+
+const ORIGIN = apiOrigin();
 const BASE = `${ORIGIN}/api`;
 
 /**
