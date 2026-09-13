@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api.js";
 import { Alert, Field } from "./ui.jsx";
 import { MessageCircle } from "./icons.jsx";
+import CodeInput from "./CodeInput.jsx";
 
 /**
  * WhatsApp number → 4-digit OTP → verified, against `/api/walkin/*`.
@@ -102,22 +103,13 @@ export default function PhoneOtp({ onVerified, initialPhone = "", notice = null 
           Change number
         </button>
       </p>
-      <input
-        className="zp-input zp-otp"
+      <CodeInput
+        length={4}
         autoFocus
-        inputMode="numeric"
-        pattern="\d*"
-        maxLength={4}
-        autoComplete="one-time-code"
-        placeholder="••••"
-        aria-label="One-time password"
+        disabled={busy}
         value={code}
-        onChange={(e) => {
-          const v = e.target.value.replace(/\D/g, "").slice(0, 4);
-          setCode(v);
-          setError(null);
-          if (v.length === 4 && !busy) verify(v);
-        }}
+        onChange={(v) => { setCode(v); setError(null); }}
+        onComplete={(v) => { if (!busy) verify(v); }}
       />
       {error && <Alert tone="error">{error}</Alert>}
       <button type="submit" className="zp-btn zp-btn--primary zp-btn--block" disabled={busy || code.length !== 4} style={{ marginTop: 14 }}>
